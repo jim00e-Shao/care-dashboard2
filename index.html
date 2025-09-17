@@ -1,0 +1,240 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>照顧紀錄儀表板（你的連結已內建）</title>
+  <style>
+    :root{--bg:#f6f7fb;--card:#fff;--muted:#6b7280;--text:#111827;--border:#e5e7eb;--accent:#111827}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif}
+    .container{max-width:1080px;margin:0 auto;padding:20px}
+    h1{font-size:22px;margin:0 0 4px} p{margin:0 0 16px;color:var(--muted);font-size:14px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 1px 2px rgba(0,0,0,.03);padding:16px}
+    .row{display:grid;grid-template-columns:1fr auto;gap:12px}
+    label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    input,select,button{font-size:14px;padding:10px;border:1px solid var(--border);border-radius:12px;background:#fff;width:100%}
+    button{background:#111827;color:#fff;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .grid{display:grid;gap:16px}
+    @media(min-width:960px){.grid{grid-template-columns:2fr 1fr}}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center}
+    .stat{background:#fff;border:1px solid var(--border);border-radius:14px;padding:10px}
+    .stat .k{font-size:12px;color:var(--muted)} .stat .v{font-weight:600;font-size:18px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:8px 10px;border-bottom:1px solid var(--border)}
+    thead{background:#f9fafb} tbody tr:nth-child(odd){background:#fafafa}
+    .flex{display:flex;gap:8px} .flex>div{flex:1}
+    .hint{font-size:12px;color:var(--muted);word-break:break-all}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>照顧紀錄儀表板（你的連結已寫入）</h1>
+      <p>此版本已內建你的 CSV 發佈連結並會自動載入；若之後想換連結，可貼到下方欄位並按「讀取資料」。</p>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <label for="sheetUrl">Google 試算表 CSV 連結</label>
+          <input id="sheetUrl" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vTpWvNe0qzDY5J9iMO0Xx-XY6emujd7LPna0V0ChhO6WmR-psSrWqKODEeC-TS_qR5vgLgHoHybaHtG/pub?output=csv">
+          <div class="hint">CSV 解析連結：<span id="csvHint">https://docs.google.com/spreadsheets/d/e/2PACX-1vTpWvNe0qzDY5J9iMO0Xx-XY6emujd7LPna0V0ChhO6WmR-psSrWqKODEeC-TS_qR5vgLgHoHybaHtG/pub?output=csv</span></div>
+        </div>
+        <div style="align-self:end">
+          <button id="loadBtn">讀取資料</button>
+        </div>
+      </div>
+      <div id="err" style="margin-top:8px;color:#b91c1c;font-size:13px;display:none"></div>
+    </section>
+
+    <section id="mapCard" class="card" style="margin-top:12px; display:none">
+      <div class="grid">
+        <div>
+          <label>欄位對應</label>
+          <div class="flex" style="margin-bottom:8px">
+            <div><label>日期 / 日期時間</label><select id="fDate"></select></div>
+            <div><label>時間（可留白）</label><select id="fTime"></select></div>
+          </div>
+          <div class="flex">
+            <div><label>收縮壓</label><select id="fSys"></select></div>
+            <div><label>舒張壓</label><select id="fDia"></select></div>
+            <div><label>心跳</label><select id="fHr"></select></div>
+          </div>
+          <div style="margin-top:8px"><label>備註</label><select id="fNote"></select></div>
+        </div>
+        <div>
+          <label>篩選日期</label>
+          <div class="flex"><div><input type="date" id="fromDate"></div><div><input type="date" id="toDate"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid" style="margin-top:12px">
+      <div class="card"><canvas id="bpChart" height="260"></canvas></div>
+      <div class="card">
+        <div class="stats">
+          <div class="stat"><div class="k">資料筆數</div><div id="sCount" class="v">-</div></div>
+          <div class="stat"><div class="k">平均收縮壓</div><div id="sAvgSys" class="v">-</div></div>
+          <div class="stat"><div class="k">平均舒張壓</div><div id="sAvgDia" class="v">-</div></div>
+          <div class="stat" style="grid-column:1/-1"><div class="k">平均心跳</div><div id="sAvgHr" class="v">-</div></div>
+        </div>
+        <div style="margin-top:10px">
+          <div class="k" style="font-size:12px;color:#6b7280">最新一筆</div>
+          <div id="lastRow" style="font-size:13px;color:#374151;margin-top:4px">-</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:12px">
+      <div style="overflow:auto">
+        <table>
+          <thead><tr><th>時間</th><th>收縮壓</th><th>舒張壓</th><th>心跳</th><th>備註</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer style="margin-top:12px;color:#9ca3af;font-size:12px;text-align:center">
+      建議在試算表中統一欄名（日期、時間、收縮壓、舒張壓、心跳、備註）；或在上方手動選擇欄位。
+    </footer>
+  </div>
+
+<script>
+const $ = (id)=>document.getElementById(id);
+const selects = ['fDate','fTime','fSys','fDia','fHr','fNote'].map($);
+let rawRows=[], headers=[];
+let chart;
+
+function setOptions(sel, opts){ sel.innerHTML = '<option value="">（不使用）</option>' + opts.map(h=>`<option value="${h}">${h}</option>`).join(''); }
+
+function guessField(hs, kws){ const low = hs.map(h=>h.toLowerCase()); for(const kw of kws){ const i = low.findIndex(h=>h.includes(kw.toLowerCase())); if(i>=0) return hs[i]; } }
+
+document.addEventListener('DOMContentLoaded', ()=>{ loadCsv($('sheetUrl').value); });
+$('loadBtn').addEventListener('click', ()=> loadCsv($('sheetUrl').value));
+
+async function loadCsv(csvUrl){
+  $('csvHint').textContent = csvUrl;
+  $('err').style.display='none';
+  try{
+    const res = await fetch(csvUrl, {cache:'no-store'});
+    if(!res.ok) throw new Error('下載失敗：' + res.status);
+    const text = await res.text();
+    const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+    headers = parsed.meta.fields || Object.keys(parsed.data[0]||{});
+    rawRows = parsed.data;
+    setOptions($('fDate'), headers);
+    setOptions($('fTime'), headers);
+    setOptions($('fSys'), headers);
+    setOptions($('fDia'), headers);
+    setOptions($('fHr'), headers);
+    setOptions($('fNote'), headers);
+
+    $('fDate').value = guessField(headers, ['日期','date','記錄時間','datetime','time']) || '';
+    $('fTime').value = guessField(headers, ['時間','time','clock']) || '';
+    $('fSys').value = guessField(headers, ['收縮','systolic','高壓','上壓','sbp','血壓(高)']) || '';
+    $('fDia').value = guessField(headers, ['舒張','diastolic','低壓','下壓','dbp','血壓(低)']) || '';
+    $('fHr').value  = guessField(headers, ['心跳','pulse','hr','heart','脈搏']) || '';
+    $('fNote').value = guessField(headers, ['備註','note','remark','症狀','用藥']) || '';
+
+    $('mapCard').style.display='block';
+    renderAll();
+    selects.forEach(sel=>sel.onchange = renderAll);
+    $('fromDate').onchange = renderAll;
+    $('toDate').onchange = renderAll;
+  }catch(e){
+    $('err').textContent = e.message || '讀取失敗';
+    $('err').style.display='block';
+  }
+}
+
+function parseDateTime(d, t){
+  const candidates=[];
+  if(d&&t) candidates.push(d+' '+t);
+  if(d) candidates.push(d);
+  if(t) candidates.push(t);
+  for(const c of candidates){
+    const dt = new Date(c);
+    if(!isNaN(dt.getTime())) return dt;
+  }
+  return null;
+}
+
+function renderAll(){
+  const map = {
+    date: $('fDate').value,
+    time: $('fTime').value,
+    systolic: $('fSys').value,
+    diastolic: $('fDia').value,
+    heartRate: $('fHr').value,
+    note: $('fNote').value,
+  };
+  const fromV = $('fromDate').value ? new Date($('fromDate').value) : null;
+  const toV = $('toDate').value ? new Date($('toDate').value) : null;
+  const data=[];
+  for(const r of rawRows){
+    const dt = parseDateTime(r[map.date], r[map.time]);
+    if(!dt) continue;
+    if(fromV && dt < fromV) continue;
+    if(toV && dt > new Date(toV.getTime()+24*3600*1000-1)) continue;
+    const item = { dt, label: dt.toLocaleString(), s: Number(r[map.systolic]), d: Number(r[map.diastolic]), h: Number(r[map.heartRate]), note: r[map.note] || '' };
+    if(!isFinite(item.s)) item.s = null;
+    if(!isFinite(item.d)) item.d = null;
+    if(!isFinite(item.h)) item.h = null;
+    data.push(item);
+  }
+  data.sort((a,b)=>a.dt-b.dt);
+
+  const sVals = data.map(x=>x.s).filter(x=>typeof x==='number');
+  const dVals = data.map(x=>x.d).filter(x=>typeof x==='number');
+  const hVals = data.map(x=>x.h).filter(x=>typeof x==='number');
+  $('sCount').textContent = data.length;
+  const avg = (arr)=>arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : '-';
+  $('sAvgSys').textContent = avg(sVals);
+  $('sAvgDia').textContent = avg(dVals);
+  $('sAvgHr').textContent  = avg(hVals);
+  const last = data[data.length-1];
+  $('lastRow').textContent = last ? `${{LABEL}}  血壓：${{S}}/${{D}}  心跳：${{H}}  備註：${{NOTE}}`
+    .replace('{{LABEL}}', last.label).replace('{{S}}', String(last.s??'-')).replace('{{D}}', String(last.d??'-')).replace('{{H}}', String(last.h??'-')).replace('{{NOTE}}', String(last.note||'')) : '-';
+
+  const tbody = $('tbody'); tbody.innerHTML='';
+  for(const row of data){
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>{{L}}</td><td>{{S}}</td><td>{{D}}</td><td>{{H}}</td><td>{{N}}</td>'
+      .replace('{{L}}', row.label)
+      .replace('{{S}}', String(row.s??'-'))
+      .replace('{{D}}', String(row.d??'-'))
+      .replace('{{H}}', String(row.h??'-'))
+      .replace('{{N}}', (row.note||'').toString().replace(/[<>]/g, s=>({'<':'&lt;','>':'&gt;'}[s])));
+    tbody.appendChild(tr);
+  }
+
+  const ctx = $('bpChart').getContext('2d');
+  const labels = data.map(x=>x.dt);
+  const sys = data.map(x=>x.s);
+  const dia = data.map(x=>x.d);
+  const hr  = data.map(x=>x.h);
+
+  if(window.chart) window.chart.destroy();
+  window.chart = new Chart(ctx, { type:'line',
+    data:{ labels, datasets:[
+      {label:'收縮壓', data: sys, yAxisID:'y1', tension:.3, spanGaps:true},
+      {label:'舒張壓', data: dia, yAxisID:'y1', tension:.3, spanGaps:true},
+      {label:'心跳',   data: hr,  yAxisID:'y2', tension:.3, spanGaps:true}
+    ]},
+    options:{ maintainAspectRatio:false, parsing:false,
+      scales:{ x:{type:'time', time:{tooltipFormat:'yyyy-LL-dd HH:mm'}},
+               y1:{position:'left', beginAtZero:true},
+               y2:{position:'right', beginAtZero:true, grid:{drawOnChartArea:false}} },
+      plugins:{ legend:{display:true}, tooltip:{mode:'index', intersect:false} }
+    }
+  });
+}
+</script>
+</body>
+</html>
